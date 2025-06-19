@@ -1,0 +1,13 @@
+flask
+flask-cors
+python-dotenv
+langchain
+langchain-google-genai
+langchain-community
+langchain-core
+google-generativeai
+pymongo
+requests
+pypdf
+python-multipart
+pathlib
