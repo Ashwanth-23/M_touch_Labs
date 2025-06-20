@@ -25,6 +25,7 @@ import uuid
 from flask_cors import CORS
 import glob
 from pathlib import Path
+import json
 
 # Load environment variables
 load_dotenv()
@@ -80,89 +81,307 @@ lead_extraction_llm = ChatGoogleGenerativeAI(
     google_api_key=GOOGLE_API_KEY
 )
 
+# Add this scenes configuration after the MongoDB setup section (around line 70)
+# 360° Virtual Tour Scenes Configuration
+scenes = {
+    "ENTRY": {
+        "panorama": "/static/images/office-15.jpg",
+        "markers": [
+            {
+                "id": "TO-ROOM1",
+                "image": "/static/images/office-10.jpg",
+                "tooltip": "Enter into the office",
+                "position": {"yaw": -3.0, "pitch": -0.15},
+                "target": "ROOM1"
+            },
+            {
+                "id": "TO-STUDIO-OUTSIDE",
+                "image": "/static/images/office-6.jpg",
+                "tooltip": "Go to Studio",
+                "position": {"yaw": -2.0, "pitch": -0.1},
+                "target": "STUDIO-OUTSIDE"
+            },
+            {
+                "id": "TO-NEW-OFFICE",
+                "image": "/static/images/office-11.jpg",
+                "tooltip": "Enter New Office",
+                "position": {"yaw": 1.5, "pitch": 0.2},
+                "target": "NEW-OFFICE"
+            }
+        ]
+    },
+    "ROOM1": {
+        "panorama": "/static/images/office-10.jpg",
+        "markers": [
+            {
+                "id": "TO-ADMIN-BLOCK",
+                "image": "/static/images/office-14.jpg",
+                "tooltip": "See Workspace",
+                "position": {"yaw": 2.5, "pitch": -0.1},
+                "target": "ADMIN-BLOCK"
+            },
+            {
+                "id": "ROOM1-BACK",
+                "image": "/static/images/office-15.jpg",
+                "tooltip": "Back",
+                "position": {"yaw": -0.6, "pitch": 0.1},
+                "target": "ENTRY"
+            }
+        ]
+    },
+    "ADMIN-BLOCK": {
+        "panorama": "/static/images/office-14.jpg",
+        "markers": [
+            {
+                "id": "TO-MEETING-ROOM",
+                "image": "/static/images/office-7.jpg",
+                "tooltip": "Meeting Room",
+                "position": {"yaw": -0.7, "pitch": -0.1},
+                "target": "MEETING-ROOM"
+            },
+            {
+                "id": "TO-WORKSPACE-FROM-ADMIN",
+                "image": "/static/images/office-7.jpg",
+                "tooltip": "Work-space",
+                "position": {"yaw": -0.4, "pitch": 0.1},
+                "target": "WORKSPACE"
+            },
+            {
+                "id": "ADMIN-BLOCK-BACK",
+                "image": "/static/images/office-10.jpg",
+                "tooltip": "Back",
+                "position": {"yaw": 2.6, "pitch": -0.1},
+                "target": "ROOM1"
+            }
+        ]
+    },
+    "MEETING-ROOM": {
+        "panorama": "/static/images/office-7.jpg",
+        "markers": [
+            {
+                "id": "MEETING-BACK",
+                "image": "/static/images/office-14.jpg",
+                "tooltip": "Back to Admin Block",
+                "position": {"yaw": -0.95, "pitch": -0.25},
+                "target": "ADMIN-BLOCK"
+            }
+        ]
+    },
+    "WORKSPACE": {
+        "panorama": "/static/images/office-2.jpg",
+        "markers": [
+            {
+                "id": "WORKSPACE-BACK",
+                "image": "/static/images/office-14.jpg",
+                "tooltip": "Back to Admin Block",
+                "position": {"yaw": -2.5, "pitch": -0.1},
+                "target": "ADMIN-BLOCK"
+            }
+        ]
+    },
+    "NEW-OFFICE": {
+        "panorama": "/static/images/office-11.jpg",
+        "markers": [
+            {
+                "id": "TO-NEW-OFFICE-INSIDE",
+                "image": "/static/images/office-12.jpg",
+                "tooltip": "See New Office",
+                "position": {"yaw": -0.2, "pitch": 0.1},
+                "target": "NEW-OFFICE-INSIDE"
+            },
+            {
+                "id": "NEW-OFFICE-BACK",
+                "image": "/static/images/office-15.jpg",
+                "tooltip": "Back",
+                "position": {"yaw": 1.5, "pitch": 0.1},
+                "target": "ENTRY"
+            }
+        ]
+    },
+    "NEW-OFFICE-INSIDE": {
+        "panorama": "/static/images/office-12.jpg",
+        "markers": [
+            {
+                "id": "NEW-OFFICE-INSIDE-BACK",
+                "image": "/static/images/office-11.jpg",
+                "tooltip": "Back to Office",
+                "position": {"yaw": -3.55, "pitch": -0.1},
+                "target": "NEW-OFFICE"
+            }
+        ]
+    },
+    "STUDIO-OUTSIDE": {
+        "panorama": "/static/images/office-6.jpg",
+        "markers": [
+            {
+                "id": "TO-STUDIO",
+                "image": "/static/images/office-1.jpg",
+                "tooltip": "Enter Studio",
+                "position": {"yaw": 1.9, "pitch": 0.05},
+                "target": "STUDIO"
+            },
+            {
+                "id": "STUDIO-OUTSIDE-BACK",
+                "image": "/static/images/office-15.jpg",
+                "tooltip": "Back to Entry",
+                "position": {"yaw": -0.6, "pitch": 0.05},
+                "target": "ENTRY"
+            }
+        ]
+    },
+    "STUDIO": {
+        "panorama": "/static/images/office-16.jpg",
+        "markers": [
+            {
+                "id": "STUDIO-BACK",
+                "image": "/static/images/office-6.jpg",
+                "tooltip": "Back to Studio Outside",
+                "position": {"yaw": -2.19, "pitch": -0.18},
+                "target": "STUDIO-OUTSIDE"
+            }
+        ]
+    }
+}
 # Prompt templates
 CONTEXT_SYSTEM_PROMPT = """Given a chat history and the latest user question \
 which might reference context in the chat history, formulate a standalone question \
 which can be understood without the chat history. Do NOT answer the question, \
 just reformulate it if needed and otherwise return it as is."""
 
-QA_SYSTEM_PROMPT = """Your name is Alex - the smart bot of mTouchLabs - These are your Operating Instructions
+QA_SYSTEM_PROMPT = """I. Welcome & Introduction
+Greet every new user with:
+"Hi, this is Nisaa! 😊 It’s nice to meet you here. How can I assist you today?"
 
-I. Purpose:
-Your primary purpose is to assist website visitors, answer their questions about mTouchLabs and our services, and subtly guide them toward becoming qualified leads by capturing their contact information and encouraging them to schedule a Technology Consultation Session. You should always prioritize a helpful and informative experience, subtly "coaxing" rather than aggressively pushing.
+On the 3rd interaction, ask:
+"By the way, may I know your name? I’d love to make our chat a bit more personal."
 
-CRITICAL: You must ONLY answer questions based on the provided context/documents. If the information is not available in the context, politely say "I don't have that specific information in my knowledge base about mTouchLabs. Let me connect you with one of our experts who can provide detailed information about this."
+II. Scope Restriction
+Only answer questions related to mTouchLabs and its services.
 
-II. Tone of Voice & Demeanor:
+If the question is out of scope, reply:
+"I'm sorry, I can only assist with questions related to mTouchLabs. Could you please ask something about that?"
 
-Professional but Conversational: Use clear and concise language, but avoid being overly formal or robotic. Imagine you're having a friendly but professional conversation with a potential client.
-Enthusiastic & Passionate: Convey enthusiasm for mTouchLabs and the value we provide to our clients – helping businesses achieve digital transformation and technological excellence. Emphasize our expertise in innovative technology solutions and digital excellence.
+III. Purpose & Output
+Guide users through mTouchLabs information and services.
 
-Empathetic & Understanding: Acknowledge and address the challenges and concerns that visitors may have regarding their technology needs, understanding that each business is unique.
-Helpful & Resourceful: Provide accurate and relevant information ONLY from the provided context and guide users toward the resources they need on our website, based on their specific questions.
+Collect leads, share info, and book expert sessions.
 
-Subtly Persuasive: Guide the conversation towards lead capture by highlighting the benefits of our services and offering personalized solutions that deliver measurable results, especially those that drive business growth through technology.
-Never Argue or Be Rude: If you don't know the answer to a question, politely say that you'll find out and follow up.
+Keep answers clear, concise (max 3 lines unless using bullets), and relevant to mTouchLabs.
 
-III. Guiding Principles:
+IV. Conversation Quality
+Use intent detection to stay relevant.
 
-Introducing & Greeting the user: Keep your introduction crisp and short. Also, ask their name (it's important that you ask the name early in the conversation). 
-and keep introduction greeting as Hi, I'm Alex from mTouchLabs! Need help with technology solutions or facing a digital challenge? I'm here to assist you. Can I know your name?
+Maintain a warm, clear, and helpful tone.
 
-Intermittently use the user's name - not in every response but make it sound and come naturally.
+Respect user pace.
 
-Prioritize User Needs: Always focus on providing value to the user and addressing their specific needs and interests in technology solutions, digital transformation, and innovative solutions.
+No links in responses.
 
-Be Transparent: Be honest and transparent about our services, pricing (where applicable - emphasize custom quotes), and process. Clearly state the importance of discussing their goals in the Technology Consultation Session.
+Use engagement hooks (one per response), such as:
 
-Build Trust: Build trust by being helpful, informative, and respectful, showcasing mTouchLabs' commitment to excellence in all our technology endeavors.
+“Would you like a quick breakdown?”
 
-ACCURACY REQUIREMENT: Only provide information that is explicitly mentioned in the provided context. Do not make assumptions or provide general technology advice that isn't specifically mentioned in the documents.
+“Want me to walk you through it?”
 
-Do not ask more than two questions in a response, sometimes even one is enough, especially when you're asking about their business or technology challenges. That will be overwhelming for the user.
+“Need help choosing the right one?”
 
-Focus on Lead Qualification: Gently guide the conversation towards gathering information that helps us qualify potential leads, focusing on their goals, challenges, and readiness to explore technology solutions.
+“Want to hear what others prefer?”
 
-Subtle Coaxing, Not Hard Selling: The goal is to encourage users to share their contact information (first name, last name, company name, email, what services they are looking for, mobile phone, etc) and schedule a meeting (the Technology Consultation Session) because they see the value in our services, not because they feel pressured.
+Avoid robotic or repetitive follow-ups.
 
-IV. Lead Capture Strategies:
-Subtle Qualifying Questions: Ask questions that help you understand the visitor's needs, budget, and timeline. Examples:
-"What are your biggest technology challenges right now?"
-"What are your goals for digital transformation in your organization?"
-"Can you tell me more about your current technology stack?"
+V. Multilanguage & Voice Support
+Respond in English, Hindi, Telugu, Arabic, or Spanish (auto-detect or use {{language}} flag).
 
-Value-Driven Offers: Offer valuable resources in exchange for contact information. Examples:
-"We are happy to provide some expertise after we get your name and email. If that's okay?"
-"It would be awesome to reach out and tell you some other ways with the contact information to reach back out to you. Does that work?"
+Support voice-to-text (STT) and text-to-speech (TTS) modes; keep voice responses short and clear (adapt to {{input_mode}}, {{output_mode}}).
 
-Benefit-Oriented Scheduling: Focus on the benefits of scheduling a consultation and emphasize the "Technology Consultation Session."
-"The next step is to schedule you a Technology Consultation Session so that I can provide you with the steps to get there. So what date and time works for you?"
-"Is there any need to put it on the calendar now?"
-"We will need your contact information now so that you get the right contact information."
+VI. Lead Capture Flow
+After sharing value:
 
-V. Handling Objections & Concerns:
-Pricing: Be transparent about our process for providing custom quotes, emphasizing the "Technology Consultation Session" as the starting point. Emphasize that costs vary depending on the scope of work.
-Example: "To provide you a fair scope, can I get some contact information to work and send you our expertise and what our company offers for this price?"
+On the 3rd line, ask for the user's name:
+"May I know your name? 🙂"
 
-Lack of Guarantee: Acknowledge the inherent risks in technology projects, but emphasize our commitment to best practices and continuous support. Reference our case studies as examples of past success if available in the context.
+On the 6th–7th line, ask for email/phone:
+"Can I email you the details?"
+"May I also get your contact for our team to assist you?"
 
-Data Privacy: Reassure users that we take their privacy seriously and that their information will be protected in accordance with our privacy policy.
+If unsure, say:
+"Totally up to you — I just want to make sure you get the best support."
 
-VI. Important Notes:
-Always prioritize providing helpful and accurate information ONLY from the provided context.
-Never make false or misleading claims.
-Be respectful of users' time and avoid being overly pushy.
-Follow these instructions and be consistent in your messaging.
-If a question is sensitive or requires a human touch, offer to connect the user with a team member directly.
-Always tell the client that an expert is working on their message and provide some expertise.
+Confirm politely:
+"Thank you, [Name]! Our team will reach out if needed. You can always chat with me again!"
 
-If you do not know and are unsure, you need to be upfront about that. Say that I don't have that specific information in my knowledge base, but let me connect you with one of our experts.
+Log all leads (Name, Phone, Email, Topic, Timestamp, Session ID) to Google Sheets/CRM.
 
-REMEMBER: Your responses must be based ONLY on the provided context. If information is not in the context, acknowledge this limitation and offer to connect them with an expert.
+VII. Expert Booking Flow
+If user requests an expert:
+
+Ask the topic of interest.
+
+Ask for preferred day/time.
+
+Offer a suggested time.
+
+Collect name, phone, and email before confirming.
+
+Confirm:
+"All set! ✅ You’ll hear from our expert on [date, time]. Let me know if you'd like a reminder!"
+
+VIII. Call to Action (CTA) Prompts
+Use gentle CTAs to convert or continue:
+
+“Want me to send this to your email?”
+
+“Would you like a callback from our team?”
+
+“Should I get someone to guide you further?”
+
+Track all CTA triggers.
+
+IX. 360° Integration (If Enabled)
+Use {{env_location}} or {{env_trigger}} for virtual tours:
+"Would you like to take a 360° look at our facility?"
+
+X. Emotional Tone & Output Style
+Empathetic, friendly, never robotic.
+
+Use emojis sparingly and only for warmth.
+
+Avoid salesy or pushy tone.
+
+Speak like a caring friend.
+
+Prioritize clarity over fluff.
+
+Don’t repeat the same sentence structure.
+
+XI. Accuracy & Compliance
+Use only information from the provided context.
+
+Never make up information.
+
+If unsure, say:
+"I don't have that specific information in my knowledge base about mTouchLabs. Let me connect you with one of our experts who can provide detailed information about this."
+
+Respect privacy and data security.
 
 Context: {context}
+Chat History: {chat_history}
 Question: {input}
-Helpful Answer:"""
+Language: {{language}}
+Input/Output Mode: {{input_mode}}, {{output_mode}}
+Environment Location/Trigger: {{env_location}}, {{env_trigger}}
+
+Your answer must be:
+
+Accurate, context-based, and concise
+
+Warm, helpful, and engaging
+
+In the user’s language
+
+Following all above rules
+
+"""
 
 LEAD_EXTRACTION_PROMPT = """
 Extract the following information from the conversation if available:
@@ -512,6 +731,77 @@ def chat():
         print(f"Chat error: {str(e)}")
         return jsonify({'error': f'An error occurred: {str(e)}'}), 500
 
+# Add these new routes before the existing routes section (around line 450)
+
+# Add these new routes before the existing routes section (around line 450)
+
+@app.route('/api/scenes', methods=['GET'])
+def get_scenes():
+    """API endpoint to serve 360° virtual tour scene data"""
+    try:
+        return jsonify(scenes), 200
+    except Exception as e:
+        return jsonify({'error': f'Failed to load scenes: {str(e)}'}), 500
+
+@app.route('/api/scenes/<scene_id>', methods=['GET'])
+def get_scene(scene_id):
+    """API endpoint to get a specific scene by ID"""
+    try:
+        if scene_id in scenes:
+            return jsonify(scenes[scene_id]), 200
+        else:
+            return jsonify({'error': 'Scene not found'}), 404
+    except Exception as e:
+        return jsonify({'error': f'Failed to load scene: {str(e)}'}), 500
+
+@app.route('/virtual-tour')
+def virtual_tour():
+    """Route to serve the virtual tour page"""
+    return render_template('virtual_tour.html')
+
+@app.route('/api/tour-trigger', methods=['POST'])
+def tour_trigger():
+    """API endpoint to handle virtual tour triggers from chat"""
+    try:
+        data = request.json
+        session_id = data.get('session_id')
+        trigger_type = data.get('trigger_type', 'general')
+        
+        # You can customize the response based on trigger_type
+        response_data = {
+            'tour_available': True,
+            'start_scene': 'ENTRY',
+            'message': 'Virtual tour is ready! Click to explore our facility.',
+            'trigger_type': trigger_type
+        }
+        
+        # Log tour trigger
+        if session_id:
+            chat_collection.update_one(
+                {"session_id": session_id},
+                {
+                    "$push": {
+                        "tour_interactions": {
+                            "trigger_type": trigger_type,
+                            "timestamp": datetime.utcnow()
+                        }
+                    }
+                },
+                upsert=True
+            )
+        
+        return jsonify(response_data), 200
+    except Exception as e:
+        return jsonify({'error': f'Tour trigger failed: {str(e)}'}), 500
+
+# Optional: Add a route to serve individual images (if needed for testing)
+@app.route('/api/image/<filename>')
+def serve_image(filename):
+    """Serve individual images for testing purposes"""
+    try:
+        return app.send_static_file(f'images/{filename}')
+    except Exception as e:
+        return jsonify({'error': f'Image not found: {str(e)}'}), 404
 @app.route('/leads', methods=['GET'])
 def get_leads():
     # Simple admin route to get all leads (should be protected in production)
