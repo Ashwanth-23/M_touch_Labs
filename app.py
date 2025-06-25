@@ -81,174 +81,15 @@ lead_extraction_llm = ChatGoogleGenerativeAI(
     google_api_key=GOOGLE_API_KEY
 )
 
-# Add this scenes configuration after the MongoDB setup section (around line 70)
-# 360° Virtual Tour Scenes Configuration
-scenes = {
-    "ENTRY": {
-        "panorama": "/static/images/office-15.jpg",
-        "markers": [
-            {
-                "id": "TO-ROOM1",
-                "image": "/static/images/office-10.jpg",
-                "tooltip": "Enter into the office",
-                "position": {"yaw": -3.0, "pitch": -0.15},
-                "target": "ROOM1"
-            },
-            {
-                "id": "TO-STUDIO-OUTSIDE",
-                "image": "/static/images/office-6.jpg",
-                "tooltip": "Go to Studio",
-                "position": {"yaw": -2.0, "pitch": -0.1},
-                "target": "STUDIO-OUTSIDE"
-            },
-            {
-                "id": "TO-NEW-OFFICE",
-                "image": "/static/images/office-11.jpg",
-                "tooltip": "Enter New Office",
-                "position": {"yaw": 1.5, "pitch": 0.2},
-                "target": "NEW-OFFICE"
-            }
-        ]
-    },
-    "ROOM1": {
-        "panorama": "/static/images/office-10.jpg",
-        "markers": [
-            {
-                "id": "TO-ADMIN-BLOCK",
-                "image": "/static/images/office-14.jpg",
-                "tooltip": "See Workspace",
-                "position": {"yaw": 2.5, "pitch": -0.1},
-                "target": "ADMIN-BLOCK"
-            },
-            {
-                "id": "ROOM1-BACK",
-                "image": "/static/images/office-15.jpg",
-                "tooltip": "Back",
-                "position": {"yaw": -0.6, "pitch": 0.1},
-                "target": "ENTRY"
-            }
-        ]
-    },
-    "ADMIN-BLOCK": {
-        "panorama": "/static/images/office-14.jpg",
-        "markers": [
-            {
-                "id": "TO-MEETING-ROOM",
-                "image": "/static/images/office-7.jpg",
-                "tooltip": "Meeting Room",
-                "position": {"yaw": -0.7, "pitch": -0.1},
-                "target": "MEETING-ROOM"
-            },
-            {
-                "id": "TO-WORKSPACE-FROM-ADMIN",
-                "image": "/static/images/office-7.jpg",
-                "tooltip": "Work-space",
-                "position": {"yaw": -0.4, "pitch": 0.1},
-                "target": "WORKSPACE"
-            },
-            {
-                "id": "ADMIN-BLOCK-BACK",
-                "image": "/static/images/office-10.jpg",
-                "tooltip": "Back",
-                "position": {"yaw": 2.6, "pitch": -0.1},
-                "target": "ROOM1"
-            }
-        ]
-    },
-    "MEETING-ROOM": {
-        "panorama": "/static/images/office-7.jpg",
-        "markers": [
-            {
-                "id": "MEETING-BACK",
-                "image": "/static/images/office-14.jpg",
-                "tooltip": "Back to Admin Block",
-                "position": {"yaw": -0.95, "pitch": -0.25},
-                "target": "ADMIN-BLOCK"
-            }
-        ]
-    },
-    "WORKSPACE": {
-        "panorama": "/static/images/office-2.jpg",
-        "markers": [
-            {
-                "id": "WORKSPACE-BACK",
-                "image": "/static/images/office-14.jpg",
-                "tooltip": "Back to Admin Block",
-                "position": {"yaw": -2.5, "pitch": -0.1},
-                "target": "ADMIN-BLOCK"
-            }
-        ]
-    },
-    "NEW-OFFICE": {
-        "panorama": "/static/images/office-11.jpg",
-        "markers": [
-            {
-                "id": "TO-NEW-OFFICE-INSIDE",
-                "image": "/static/images/office-12.jpg",
-                "tooltip": "See New Office",
-                "position": {"yaw": -0.2, "pitch": 0.1},
-                "target": "NEW-OFFICE-INSIDE"
-            },
-            {
-                "id": "NEW-OFFICE-BACK",
-                "image": "/static/images/office-15.jpg",
-                "tooltip": "Back",
-                "position": {"yaw": 1.5, "pitch": 0.1},
-                "target": "ENTRY"
-            }
-        ]
-    },
-    "NEW-OFFICE-INSIDE": {
-        "panorama": "/static/images/office-12.jpg",
-        "markers": [
-            {
-                "id": "NEW-OFFICE-INSIDE-BACK",
-                "image": "/static/images/office-11.jpg",
-                "tooltip": "Back to Office",
-                "position": {"yaw": -3.55, "pitch": -0.1},
-                "target": "NEW-OFFICE"
-            }
-        ]
-    },
-    "STUDIO-OUTSIDE": {
-        "panorama": "/static/images/office-6.jpg",
-        "markers": [
-            {
-                "id": "TO-STUDIO",
-                "image": "/static/images/office-1.jpg",
-                "tooltip": "Enter Studio",
-                "position": {"yaw": 1.9, "pitch": 0.05},
-                "target": "STUDIO"
-            },
-            {
-                "id": "STUDIO-OUTSIDE-BACK",
-                "image": "/static/images/office-15.jpg",
-                "tooltip": "Back to Entry",
-                "position": {"yaw": -0.6, "pitch": 0.05},
-                "target": "ENTRY"
-            }
-        ]
-    },
-    "STUDIO": {
-        "panorama": "/static/images/office-16.jpg",
-        "markers": [
-            {
-                "id": "STUDIO-BACK",
-                "image": "/static/images/office-6.jpg",
-                "tooltip": "Back to Studio Outside",
-                "position": {"yaw": -2.19, "pitch": -0.18},
-                "target": "STUDIO-OUTSIDE"
-            }
-        ]
-    }
-}
 # Prompt templates
 CONTEXT_SYSTEM_PROMPT = """Given a chat history and the latest user question \
 which might reference context in the chat history, formulate a standalone question \
 which can be understood without the chat history. Do NOT answer the question, \
 just reformulate it if needed and otherwise return it as is."""
 
-QA_SYSTEM_PROMPT = """Your name is Nisaa – the smart virtual assistant on this website. Follow these operating instructions:
+
+QA_SYSTEM_PROMPT = """
+Your name is Nisaa – the smart virtual assistant on this website. Follow these operating instructions:
  
 I. 🎯 Purpose:
 You assist visitors with clear, helpful answers based **only** on the provided context. Your responses should be concise, either in the form of a short summary or in **2–3 natural lines**. You also guide users toward sharing their details and booking expert consultations.
@@ -269,7 +110,7 @@ On greeting, respond with:
 IV. 🔄 Lead Capture Flow:
 1. Begin by helping — **do not** ask for personal info in the first two replies.
 2. After your second helpful response (around the 3rd message), ask:
-   “By the way, may I know your name? It’s nice to know you.”
+   “By the way, may I know your name? It’s always nice to help you personally.”
 3. If the user doesn’t provide a name, gently follow up:
    “Just before we move forward, may I please know your name? It helps me assist you better.”
 4. Once the name is shared, continue naturally and use it in responses.
@@ -279,61 +120,20 @@ IV. 🔄 Lead Capture Flow:
 6. Ask for their **service interest**, and offer to schedule an expert consultation.
 7. Keep it human — ask a **maximum of 2 questions per message**.
  
-V. 💡 Personalized Hook Prompts (only after name is shared):
-Choose hook prompts based on the user’s topic of interest or previous question:
- 
-🔧 If user asked about a **service or feature**:
+V. 💡 Hook Prompts (only after name is shared):
 - “Would you like help choosing the right service?”
-- “Want to see how others use this service?”
+- “Want to see how others use this?”
 - “Shall I walk you through a real example?”
-- “Would a quick demo help here?”
- 
-📈 If user asked about **benefits, results, or use-cases**:
-- “Want to see how this helped someone like you?”
-- “Curious to see some success stories with this?”
-- “Should I share how this usually works in real cases?”
- 
-🧭 If user sounds **unsure or confused**:
-- “Need help figuring out what fits you best?”
-- “Want me to shortlist some options for you?”
-- “Shall I simplify this for you step-by-step?”
- 
-🧪 If user is exploring or comparing:
-- “Want to try a quick walkthrough?”
-- “Should I compare this with similar options?”
- 
-🧑‍⚕️ If user asked about **consultation or appointment**:
-- “Would you like to book a quick expert call?”
-- “Want me to check available slots for you?”
- 
-Use only **1 hook prompt** per message, and only after the user's name is known.
+- “Would you like to try a demo of this?”
+- “Interested in seeing how this helped other clients?”
  
 VI. 📞 Booking an Expert Call:
-When a user wants a consultation or meeting:
- 
-1. If the topic/service was already mentioned in recent messages (1–2 turns), do **not** ask again.
-   - Instead say: “Sure! I’ll schedule a meeting to discuss [topic].”
- 
-2. If the topic hasn’t been mentioned clearly, ask:
-   - “What topic or service would you like to discuss during the meeting?”
- 
-3. Then collect contact info in this order:
-   - First: “May I have your email and phone number so we can share the invite?”
- 
-4. After they respond, ask:
-   - “Thanks! What date and time would be most convenient for your meeting?”
- 
-5. Final confirmation (must include reminder note):
-   - “Done! You’re all set for a meeting on [date] at [time] to discuss [topic]. Our expert will reach out to you.”
-   - ✅ “We’ll also send you a reminder closer to the meeting date.”
- 
-📌 Notes:
-- 🚫 Never ask for all info (topic, contact, date/time) in one message.
-- ✅ Always reuse the user’s last stated topic to avoid repetition.
-- ✅ Add a **reminder message** even if the user doesn’t request it.
- 
- 
- 
+- Ask for topic/service of interest
+- Ask for their preferred date and time
+- Confirm schedule
+- Collect name (if not already)
+- Collect email and phone number
+- Confirm the booking and offer a reminder
  
 VII. 🔁 Fallback Handling:
 - If repeated: “Let me explain that again, no worries.”
@@ -346,23 +146,11 @@ VIII. 📝 Message Format:
 - Do not include external links
 - Never use emojis unless explicitly requested
  
-IX. ✅ Hook Follow-Up Handling:
-If a user agrees to a hook (e.g., says "yes", "okay", "sure"), follow up with a **brief and relevant insight or example** before asking for email or phone number.
- 
-Example:
-- Hook: “Want to see how this helped someone like you?”
-- User: “Yes”
-→ Response: “Here’s an example – one of our clients reduced AWS costs by 40%. Would you like me to email you the full case study?”
- 
-Do not skip directly to lead capture without responding meaningfully to the hook.
- 
----
- 
 Context: {context}  
 Chat History: {chat_history}  
 Question: {input}  
  
-Answer (based strictly on context, in short summary or 2–3 friendly lines. Only use hooks after name is shared, and personalize based on topic. If replying to a hook confirmation, include a meaningful insight first before any CTA):
+Answer (based strictly on context, in short summary or 2–3 friendly lines. Only use CTA/hooks **after name is known**):
 """
  
  
@@ -650,6 +438,7 @@ def chat():
     data = request.json
     user_input = data.get('message')
     session_id = data.get('session_id', str(uuid.uuid4()))
+    language = data.get('language', 'en')  # Default to English if not provided
     
     if not user_input:
         return jsonify({'error': 'No input provided'}), 400
@@ -701,7 +490,8 @@ def chat():
                         ]
                     }
                 },
-                "$setOnInsert": {"created_at": datetime.utcnow()}
+                "$setOnInsert": {"created_at": datetime.utcnow()},
+                "$set": {"language": language}  # Store language for session
             },
             upsert=True
         )
@@ -715,78 +505,6 @@ def chat():
     except Exception as e:
         print(f"Chat error: {str(e)}")
         return jsonify({'error': f'An error occurred: {str(e)}'}), 500
-
-# Add these new routes before the existing routes section (around line 450)
-
-# Add these new routes before the existing routes section (around line 450)
-
-@app.route('/api/scenes', methods=['GET'])
-def get_scenes():
-    """API endpoint to serve 360° virtual tour scene data"""
-    try:
-        return jsonify(scenes), 200
-    except Exception as e:
-        return jsonify({'error': f'Failed to load scenes: {str(e)}'}), 500
-
-@app.route('/api/scenes/<scene_id>', methods=['GET'])
-def get_scene(scene_id):
-    """API endpoint to get a specific scene by ID"""
-    try:
-        if scene_id in scenes:
-            return jsonify(scenes[scene_id]), 200
-        else:
-            return jsonify({'error': 'Scene not found'}), 404
-    except Exception as e:
-        return jsonify({'error': f'Failed to load scene: {str(e)}'}), 500
-
-@app.route('/virtual-tour')
-def virtual_tour():
-    """Route to serve the virtual tour page"""
-    return render_template('virtual_tour.html')
-
-@app.route('/api/tour-trigger', methods=['POST'])
-def tour_trigger():
-    """API endpoint to handle virtual tour triggers from chat"""
-    try:
-        data = request.json
-        session_id = data.get('session_id')
-        trigger_type = data.get('trigger_type', 'general')
-        
-        # You can customize the response based on trigger_type
-        response_data = {
-            'tour_available': True,
-            'start_scene': 'ENTRY',
-            'message': 'Virtual tour is ready! Click to explore our facility.',
-            'trigger_type': trigger_type
-        }
-        
-        # Log tour trigger
-        if session_id:
-            chat_collection.update_one(
-                {"session_id": session_id},
-                {
-                    "$push": {
-                        "tour_interactions": {
-                            "trigger_type": trigger_type,
-                            "timestamp": datetime.utcnow()
-                        }
-                    }
-                },
-                upsert=True
-            )
-        
-        return jsonify(response_data), 200
-    except Exception as e:
-        return jsonify({'error': f'Tour trigger failed: {str(e)}'}), 500
-
-# Optional: Add a route to serve individual images (if needed for testing)
-@app.route('/api/image/<filename>')
-def serve_image(filename):
-    """Serve individual images for testing purposes"""
-    try:
-        return app.send_static_file(f'images/{filename}')
-    except Exception as e:
-        return jsonify({'error': f'Image not found: {str(e)}'}), 404
 @app.route('/leads', methods=['GET'])
 def get_leads():
     # Simple admin route to get all leads (should be protected in production)
