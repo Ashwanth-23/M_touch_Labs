@@ -21,12 +21,17 @@ import time
 import requests
 from requests.auth import HTTPDigestAuth
 from datetime import datetime
+from pydub import AudioSegment
 import uuid
 from flask_cors import CORS
 import glob
 from pathlib import Path
 import json
-
+import base64                                   # <-- ADDED
+from io import BytesIO                          # <-- ADDED
+# ==== ElevenLabs Integration – imports start ====
+from elevenlabs import ElevenLabs, VoiceSettings  # pip install elevenlabs
+# ==== ElevenLabs Integration – imports end   ====
 # Load environment variables
 load_dotenv()
 
@@ -42,6 +47,14 @@ DOCUMENTS_FOLDER = os.getenv("DOCUMENTS_FOLDER", "./data/")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-pro")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "models/embedding-001")
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.7"))
+
+# ==== ElevenLabs Integration – env start ====
+
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
+
+ELEVENLABS_VOICE_ID= os.getenv("ELEVENLABS_VOICE_ID", "ZF6FPAbjXT4488VcRRnw")  # default English voice
+
+# ==== ElevenLabs Integration – env end   ====
 
 # MongoDB Atlas Search Index configuration
 ATLAS_PUBLIC_KEY = os.getenv("ATLAS_PUBLIC_KEY")
@@ -80,6 +93,19 @@ lead_extraction_llm = ChatGoogleGenerativeAI(
     temperature=0.1,
     google_api_key=GOOGLE_API_KEY
 )
+
+
+
+# ==== ElevenLabs Integration – client start ====
+
+eleven_client = ElevenLabs(api_key=ELEVENLABS_API_KEY) if ELEVENLABS_API_KEY else None
+# guard if key missing
+if not eleven_client:
+    print("[WARN] ELEVENLABS_API_KEY not set – voice endpoints will 503.")
+# ==== ElevenLabs Integration – client end   ====
+# ------------------------------------------------
+#  3 · PROMPTS & HELPERS
+
 
 # Prompt templates
 CONTEXT_SYSTEM_PROMPT = """Given a chat history and the latest user question \
@@ -195,6 +221,31 @@ def get_session_history(session_id: str) -> BaseChatMessageHistory:
         chat_store[session_id] = ChatMessageHistory()
     return chat_store[session_id]
 
+# ==== ElevenLabs Integration – helper functions start ====
+def tts_generate(text: str, voice_id: str = ELEVENLABS_VOICE_ID) -> bytes:
+    """Generate MP3 bytes from text using ElevenLabs."""
+    if not eleven_client:
+        raise RuntimeError("ElevenLabs client not configured")
+    stream = eleven_client.text_to_speech.convert(
+        voice_id=voice_id,
+        text=text,
+        model_id="eleven_turbo_v2_5",
+        output_format="mp3_22050_32",
+        voice_settings=VoiceSettings()
+    )
+    return b"".join(stream)
+def stt_transcribe(audio_bytes: bytes, language_code: str | None = None) -> str:
+    """Transcribe user speech with ElevenLabs Scribe v1 (99‑lang auto-detect)."""
+    if not eleven_client:
+        raise RuntimeError("ElevenLabs client not configured")
+    resp = eleven_client.speech_to_text.convert(
+        file=BytesIO(audio_bytes),
+        model_id="scribe_v1",
+        language_code=language_code,
+        diarize=False,       
+    )
+    return resp.text
+# ==== ElevenLabs Integration – helper functions end   ====
 # Atlas Search Index management functions
 def create_atlas_search_index():
     url = f"https://cloud.mongodb.com/api/atlas/v2/groups/{ATLAS_GROUP_ID}/clusters/{ATLAS_CLUSTER_NAME}/search/indexes"
@@ -423,6 +474,60 @@ except Exception as e:
     print(f"Failed to initialize vector store: {e}")
     raise
 
+def handle_chat(session_id: str, user_input: str) -> str:
+    # Create RAG pipeline with enhanced retrieval
+    document_chain = create_stuff_documents_chain(llm, qa_prompt)
+    retriever = vector_search.as_retriever(
+        search_type="similarity_score_threshold",
+        search_kwargs={"k": 8, "score_threshold": 0.6}
+    )
+    history_aware_retriever = create_history_aware_retriever(llm, retriever, contextualize_q_prompt)
+    retrieval_chain = create_retrieval_chain(history_aware_retriever, document_chain)
+
+    conversational_rag_chain = RunnableWithMessageHistory(
+        retrieval_chain,
+        get_session_history,
+        input_messages_key="input",
+        history_messages_key="chat_history",
+        output_messages_key="answer",
+    )
+
+    # Invoke RAG chain
+    response = conversational_rag_chain.invoke(
+        {"input": user_input},
+        config={"configurable": {"session_id": session_id}}
+    )
+    answer = response['answer']
+
+    # Store in MongoDB
+    chat_collection.update_one(
+        {"session_id": session_id},
+        {
+            "$push": {
+                "messages": {
+                    "$each": [
+                        {"role": "user", "content": user_input, "timestamp": datetime.utcnow()},
+                        {"role": "assistant", "content": answer, "timestamp": datetime.utcnow()}
+                    ]
+                }
+            },
+            "$setOnInsert": {"created_at": datetime.utcnow()},
+        },
+        upsert=True
+    )
+
+    # Trigger lead extraction if enough messages
+    message_count = len(chat_collection.find_one({"session_id": session_id}).get("messages", []))
+    if message_count >= 4:
+        extract_lead_info(session_id)
+
+    return answer
+# @app.before_first_request
+# def list_routes():
+#     print("Registered routes:")
+#     for rule in app.url_map.iter_rules():
+#         print(f"{rule.methods} {rule.rule}")
+
 # Routes
 @app.route('/')
 def index():
@@ -438,73 +543,136 @@ def chat():
     data = request.json
     user_input = data.get('message')
     session_id = data.get('session_id', str(uuid.uuid4()))
-    language = data.get('language', 'en')  # Default to English if not provided
     
     if not user_input:
         return jsonify({'error': 'No input provided'}), 400
     
-    # Create RAG pipeline with enhanced retrieval
-    document_chain = create_stuff_documents_chain(llm, qa_prompt)
-    
-    # Enhanced retriever with better similarity threshold
-    retriever = vector_search.as_retriever(
-        search_type="similarity_score_threshold",
-        search_kwargs={
-            "k": 8,  # Increased to get more relevant context
-            "score_threshold": 0.6  # Adjusted for Gemini embeddings
-        }
-    )
-    
-    history_aware_retriever = create_history_aware_retriever(llm, retriever, contextualize_q_prompt)
-    retrieval_chain = create_retrieval_chain(history_aware_retriever, document_chain)
-    
-    conversational_rag_chain = RunnableWithMessageHistory(
-        retrieval_chain,
-        get_session_history,
-        input_messages_key="input",
-        history_messages_key="chat_history",
-        output_messages_key="answer",
-    )
-    
     try:
-        # Get response from RAG
-        response = conversational_rag_chain.invoke(
-            {"input": user_input},
-            config={"configurable": {"session_id": session_id}}
-        )
-        answer = response['answer']
-        
-        # Log retrieved context for debugging
-        context_docs = response.get('context', [])
-        print(f"Retrieved {len(context_docs)} context documents for query: {user_input}")
-        
-        # Store message in MongoDB
-        chat_collection.update_one(
-            {"session_id": session_id},
-            {
-                "$push": {
-                    "messages": {
-                        "$each": [
-                            {"role": "user", "content": user_input, "timestamp": datetime.utcnow()},
-                            {"role": "assistant", "content": answer, "timestamp": datetime.utcnow()}
-                        ]
-                    }
-                },
-                "$setOnInsert": {"created_at": datetime.utcnow()},
-                "$set": {"language": language}  # Store language for session
-            },
-            upsert=True
-        )
-        
-        # Extract lead info after sufficient conversation
-        message_count = len(chat_collection.find_one({"session_id": session_id}).get("messages", []))
-        if message_count >= 4:  # Extract after 2 user messages
-            extract_lead_info(session_id)
-        
+        answer = handle_chat(session_id, user_input)
         return jsonify({'response': answer}), 200
     except Exception as e:
         print(f"Chat error: {str(e)}")
         return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+    
+#     # Create RAG pipeline with enhanced retrieval
+#     document_chain = create_stuff_documents_chain(llm, qa_prompt)
+    
+#     # Enhanced retriever with better similarity threshold
+#     retriever = vector_search.as_retriever(
+#         search_type="similarity_score_threshold",
+#         search_kwargs={
+#             "k": 8,  # Increased to get more relevant context
+#             "score_threshold": 0.6  # Adjusted for Gemini embeddings
+#         }
+#     )
+    
+#     history_aware_retriever = create_history_aware_retriever(llm, retriever, contextualize_q_prompt)
+#     retrieval_chain = create_retrieval_chain(history_aware_retriever, document_chain)
+    
+#     conversational_rag_chain = RunnableWithMessageHistory(
+#         retrieval_chain,
+#         get_session_history,
+#         input_messages_key="input",
+#         history_messages_key="chat_history",
+#         output_messages_key="answer",
+#     )
+    
+#     try:
+#         # Get response from RAG
+#         response = conversational_rag_chain.invoke(
+#             {"input": user_input},
+#             config={"configurable": {"session_id": session_id}}
+#         )
+#         answer = response['answer']
+        
+#         # Log retrieved context for debugging
+#         context_docs = response.get('context', [])
+#         print(f"Retrieved {len(context_docs)} context documents for query: {user_input}")
+        
+#         # Store message in MongoDB
+#         chat_collection.update_one(
+#             {"session_id": session_id},
+#             {
+#                 "$push": {
+#                     "messages": {
+#                         "$each": [
+#                             {"role": "user", "content": user_input, "timestamp": datetime.utcnow()},
+#                             {"role": "assistant", "content": answer, "timestamp": datetime.utcnow()}
+#                         ]
+#                     }
+#                 },
+#                 "$setOnInsert": {"created_at": datetime.utcnow()},
+#             },
+#             upsert=True
+#         )
+        
+#         # Extract lead info after sufficient conversation
+#         message_count = len(chat_collection.find_one({"session_id": session_id}).get("messages", []))
+#         if message_count >= 4:  # Extract after 2 user messages
+#             extract_lead_info(session_id)
+        
+#         return jsonify({'response': answer}), 200
+#     except Exception as e:
+#         print(f"Chat error: {str(e)}")
+#         return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+    
+# # --------------- voice chat (NEW) ----------------
+
+# # ==== ElevenLabs Integration – route start ====
+
+@app.route("/chat_voice", methods=["POST"])
+def chat_voice():
+    if not eleven_client:
+        return jsonify({"error": "Voice service not configured"}), 503
+
+    # 1️⃣  Validate upload
+    if "audio" not in request.files:
+        return jsonify({"error": "No audio file provided"}), 400
+    raw_file = request.files["audio"]
+    session_id = request.form.get("session_id", str(uuid.uuid4()))
+    language   = request.form.get("language")  or None       # optional
+    # transcript = stt_transcribe(audio_bytes, language)
+    voice_id   = request.form.get("voice_id", ELEVENLABS_VOICE_ID)
+
+    try:
+        # 2️⃣  Convert WEBM → WAV (16-bit 48 kHz)
+        webm_bytes = raw_file.read()
+        audio_seg  = AudioSegment.from_file(BytesIO(webm_bytes), format="webm")
+        wav_io     = BytesIO()
+        audio_seg.export(wav_io, format="wav")
+        wav_bytes  = wav_io.getvalue()
+        print("✅ WEBM converted to WAV – size", len(wav_bytes))
+
+        # 3️⃣  Speech-to-text
+        user_input = stt_transcribe(wav_bytes, language)
+        print("🗣️  Transcript:", user_input or "(empty)")
+
+        if not user_input.strip():
+            return jsonify({"error": "Could not detect speech"}), 400
+
+        # 4️⃣  RAG chat
+        answer = handle_chat(session_id, user_input)
+        print("🤖 Assistant:", answer[:80], "…")
+
+        # 5️⃣  Text-to-speech
+        tts_bytes = tts_generate(answer, voice_id)
+        audio_b64 = base64.b64encode(tts_bytes).decode()
+
+        # 6️⃣  Return both text + voice
+        return jsonify({
+            "transcript": user_input,
+            "response":   answer,
+            "audio_b64":  audio_b64,
+            "audio_url": f"data:audio/mp3;base64,{audio_b64}",  # ← ADD THIS LINE
+            "session_id": session_id,
+        }), 200
+
+    except Exception as e:
+        # print full traceback for easier debugging
+        import traceback, sys
+        traceback.print_exc(file=sys.stdout)
+        return jsonify({"error": f"Voice pipeline failed: {e}"}), 500
+
 @app.route('/leads', methods=['GET'])
 def get_leads():
     # Simple admin route to get all leads (should be protected in production)

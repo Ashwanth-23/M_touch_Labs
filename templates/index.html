@@ -397,6 +397,10 @@
             <div class="typing-dot"></div>
             <span style="margin-left: 10px; color: #666;">Alex is typing...</span>
         </div>
+        <!-- ADD AUDIO PLAYER HERE -->
+        <div style="padding: 0 20px;">
+            <audio id="voiceReply" controls style="display: none; width: 100%; margin: 10px 0;"></audio>
+        </div>
 
         <div class="chat-input-container">
             <div class="chat-input-wrapper">
@@ -406,10 +410,15 @@
                         <path d="M2 21L23 12L2 3V10L17 12L2 14V21Z" fill="currentColor"/>
                     </svg>
                 </button>
+                <button id="recordButton" class="send-button" title="Hold to talk">
+                    
+                    <svg xmlns="http://www.w3.org/2000/svg" height="24" width="24" viewBox="0 0 24 24" fill="white">
+                        <path d="M12 15q-.825 0-1.413-.587Q10 13.825 10 13V7q0-.825.587-1.412Q11.175 5 12 5t1.413.588Q14 6.175 14 7v6q0 .825-.587 1.413Q12.825 15 12 15Zm-1 6v-3.075q-2.25-.35-3.625-2.062Q6 14.15 6 12h2q0 1.475 1.012 2.488Q10.025 15.5 11.5 15.5t2.488-1.012Q15 13.475 15 12h2q0 2.15-1.375 3.863Q14.25 17.65 12 18v3Z"/>
+                    </svg>
+                </button>
             </div>
         </div>
     </div>
-
     <script>
         let sessionId = null;
         let isInitialized = false;
@@ -474,7 +483,7 @@
             
             if (validFiles.length > 0) {
                 selectedFilesDiv.textContent = `${validFiles.length} file(s) selected: ${validFiles.map(f => f.name).join(', ')}`;
-                uploadButton.disabled = false;
+                uploadButton.disabled = false;  
             } else {
                 selectedFilesDiv.textContent = 'No valid files selected';
                 uploadButton.disabled = true;
@@ -631,5 +640,101 @@
             initializeSession();
         });
     </script>
+    <script>
+const recordButton = document.getElementById('recordButton');
+let mediaRecorder, audioChunks = [];
+let isRecording = false;
+
+async function startRecording() {
+    if (isRecording) return;
+    
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        isRecording = true;
+        
+        // Visual feedback
+        recordButton.style.background = '#dc3545';
+        
+        mediaRecorder.ondataavailable = event => {
+            if (event.data.size > 0) audioChunks.push(event.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+            isRecording = false;
+            recordButton.style.background = 'linear-gradient(45deg, #667eea, #764ba2)';
+            
+            const blob = new Blob(audioChunks, { type: 'audio/webm' });
+            const formData = new FormData();
+            formData.append('audio', blob);
+            formData.append('session_id', sessionId);
+            formData.append('language', 'eng');
+
+            // addMessage('[Voice message sent]', true);
+            showTypingIndicator();
+
+            try {
+                const response = await fetch('/chat_voice', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                hideTypingIndicator();
+
+                if (response.ok) {
+                    // Show the actual transcribed text from the server response
+                    if (data.transcript) {
+                        addMessage(data.transcript, true); // Show transcribed text as user message
+                    }
+                    addMessage(data.response);
+                    if (data.audio_url) {
+                        const audioPlayer = document.getElementById('voiceReply');
+                        audioPlayer.src = `data:audio/mp3;base64,${data.audio_b64}`;
+                        audioPlayer.style.display = 'block';
+                        audioPlayer.play();
+                    }
+                } else {
+                    addMessage('Error with voice reply.');
+                    console.error(data.error);
+                }
+            } catch (err) {
+                hideTypingIndicator();
+                addMessage('Voice request failed.');
+                console.error(err);
+            }
+            
+            // Stop all tracks
+            stream.getTracks().forEach(track => track.stop());
+        };
+
+        mediaRecorder.start();
+    } catch (error) {
+        console.error('Microphone access denied:', error);
+        addMessage('Microphone access denied. Please enable microphone permissions.');
+        isRecording = false;
+    }
+}
+
+function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+    }
+}
+
+// Voice recording events
+recordButton.addEventListener('mousedown', startRecording);
+recordButton.addEventListener('mouseup', stopRecording);
+recordButton.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    startRecording();
+});
+recordButton.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    stopRecording();
+});
+</script>
+    
 </body>
 </html>

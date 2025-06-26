@@ -11,3 +11,4 @@ requests
 pypdf
 python-multipart
 pathlib
+pydub
