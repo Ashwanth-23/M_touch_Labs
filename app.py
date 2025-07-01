@@ -52,7 +52,7 @@ LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.7"))
 
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 
-ELEVENLABS_VOICE_ID= os.getenv("ELEVENLABS_VOICE_ID", "ZF6FPAbjXT4488VcRRnw")  # default English voice
+ELEVENLABS_VOICE_ID= os.getenv("ELEVENLABS_VOICE_ID", "ZUrEGyu8GFMwnHbvLhv2")  # default English voice
 
 # ==== ElevenLabs Integration – env end   ====
 
