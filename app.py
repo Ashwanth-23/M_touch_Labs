@@ -233,14 +233,22 @@ def tts_generate(text: str, voice_id: str = ELEVENLABS_VOICE_ID) -> bytes:
     """Generate MP3 bytes from text using ElevenLabs."""
     if not eleven_client:
         raise RuntimeError("ElevenLabs client not configured")
-    stream = eleven_client.text_to_speech.convert(
-        voice_id=voice_id,
-        text=text,
-        model_id="eleven_turbo_v2_5",
-        output_format="mp3_22050_32",
-        voice_settings=VoiceSettings()
-    )
-    return b"".join(stream)
+    try:
+        stream = eleven_client.text_to_speech.convert(
+            voice_id=voice_id,
+            text=text,
+            model_id="eleven_turbo_v2_5",
+            output_format="mp3_22050_32",
+            voice_settings=VoiceSettings()
+        )
+        audio_bytes = b"".join(stream)
+        print("🎤 TTS generated length:", len(audio_bytes))
+        return audio_bytes
+    except Exception as e:
+        import traceback
+        print("🎤 TTS failed:", e)
+        traceback.print_exc()
+        raise
 def stt_transcribe(audio_bytes: bytes, language_code: str | None = None) -> str:
     """Transcribe user speech with ElevenLabs Scribe v1 (99‑lang auto-detect)."""
     if not eleven_client:
