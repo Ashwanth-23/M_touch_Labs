@@ -5,13 +5,6 @@ print("========================")
 import subprocess
 from flask import Response
 
-@app.route("/check_ffmpeg")
-def check_ffmpeg():
-    try:
-        output = subprocess.check_output(["ffmpeg", "-version"], stderr=subprocess.STDOUT)
-        return Response(output, mimetype="text/plain")
-    except Exception as e:
-        return f"FFmpeg not found or failed to execute: {e}", 500
 from flask import Flask, request, jsonify, render_template, session
 import os
 from dotenv import load_dotenv
@@ -547,6 +540,15 @@ def handle_chat(session_id: str, user_input: str) -> str:
 @app.route('/')
 def index():
     return render_template('index.html')
+
+
+@app.route("/check_ffmpeg")
+def check_ffmpeg():
+    try:
+        output = subprocess.check_output(["ffmpeg", "-version"], stderr=subprocess.STDOUT)
+        return Response(output, mimetype="text/plain")
+    except Exception as e:
+        return f"FFmpeg not found or failed to execute: {e}", 500
 
 @app.route('/generate_session', methods=['GET'])
 def generate_session():
