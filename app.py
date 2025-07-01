@@ -1,3 +1,7 @@
+import sys
+print("==== PYTHON VERSION ====")
+print(sys.version)
+print("========================")
 from flask import Flask, request, jsonify, render_template, session
 import os
 from dotenv import load_dotenv
