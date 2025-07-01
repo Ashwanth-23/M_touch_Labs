@@ -632,6 +632,11 @@ def chat_voice():
     # 1️⃣  Validate upload
     if "audio" not in request.files:
         return jsonify({"error": "No audio file provided"}), 400
+    # ✅ DEBUG LOGS GO HERE
+    print("===== DEBUG: /chat_voice called =====")
+    print("Request headers:", request.headers)
+    print("Request form:", request.form)
+    print("Request files:", request.files)
     raw_file = request.files["audio"]
     session_id = request.form.get("session_id", str(uuid.uuid4()))
     language   = request.form.get("language")  or None       # optional
