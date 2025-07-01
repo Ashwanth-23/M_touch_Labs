@@ -242,13 +242,19 @@ def stt_transcribe(audio_bytes: bytes, language_code: str | None = None) -> str:
     """Transcribe user speech with ElevenLabs Scribe v1 (99‑lang auto-detect)."""
     if not eleven_client:
         raise RuntimeError("ElevenLabs client not configured")
-    resp = eleven_client.speech_to_text.convert(
-        file=BytesIO(audio_bytes),
-        model_id="scribe_v1",
-        language_code=language_code,
-        diarize=False,       
-    )
-    return resp.text
+    print("✅ Starting STT transcription...")
+    try:
+        resp = eleven_client.speech_to_text.convert(
+            file=BytesIO(audio_bytes),
+            model_id="scribe_v1",
+            language_code=language_code,
+            diarize=False,       
+        )
+        return resp.text
+    except Exception as e:
+        import traceback, sys
+        traceback.print_exc(file=sys.stdout)
+        raise RuntimeError(f"STT transcription failed: {e}")
 # ==== ElevenLabs Integration – helper functions end   ====
 # Atlas Search Index management functions
 def create_atlas_search_index():
