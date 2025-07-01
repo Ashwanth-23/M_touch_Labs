@@ -2,6 +2,16 @@ import sys
 print("==== PYTHON VERSION ====")
 print(sys.version)
 print("========================")
+import subprocess
+from flask import Response
+
+@app.route("/check_ffmpeg")
+def check_ffmpeg():
+    try:
+        output = subprocess.check_output(["ffmpeg", "-version"], stderr=subprocess.STDOUT)
+        return Response(output, mimetype="text/plain")
+    except Exception as e:
+        return f"FFmpeg not found or failed to execute: {e}", 500
 from flask import Flask, request, jsonify, render_template, session
 import os
 from dotenv import load_dotenv
@@ -243,18 +253,13 @@ def stt_transcribe(audio_bytes: bytes, language_code: str | None = None) -> str:
     if not eleven_client:
         raise RuntimeError("ElevenLabs client not configured")
     print("✅ Starting STT transcription...")
-    try:
-        resp = eleven_client.speech_to_text.convert(
-            file=BytesIO(audio_bytes),
-            model_id="scribe_v1",
-            language_code=language_code,
-            diarize=False,       
-        )
-        return resp.text
-    except Exception as e:
-        import traceback, sys
-        traceback.print_exc(file=sys.stdout)
-        raise RuntimeError(f"STT transcription failed: {e}")
+    resp = eleven_client.speech_to_text.convert(
+        file=BytesIO(audio_bytes),
+        model_id="scribe_v1",
+        language_code=language_code,
+        diarize=False,       
+    )
+    return resp.text
 # ==== ElevenLabs Integration – helper functions end   ====
 # Atlas Search Index management functions
 def create_atlas_search_index():
