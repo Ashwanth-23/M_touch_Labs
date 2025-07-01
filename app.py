@@ -633,52 +633,59 @@ def chat_voice():
     if "audio" not in request.files:
         return jsonify({"error": "No audio file provided"}), 400
     # ✅ DEBUG LOGS GO HERE
-    print("===== DEBUG: /chat_voice called =====")
-    print("Request headers:", request.headers)
-    print("Request form:", request.form)
-    print("Request files:", request.files)
-    raw_file = request.files["audio"]
-    session_id = request.form.get("session_id", str(uuid.uuid4()))
-    language   = request.form.get("language")  or None       # optional
-    # transcript = stt_transcribe(audio_bytes, language)
-    voice_id   = request.form.get("voice_id", ELEVENLABS_VOICE_ID)
-
     try:
-        # 2️⃣  Convert WEBM → WAV (16-bit 48 kHz)
-        webm_bytes = raw_file.read()
-        audio_seg  = AudioSegment.from_file(BytesIO(webm_bytes), format="webm")
-        wav_io     = BytesIO()
-        audio_seg.export(wav_io, format="wav")
-        wav_bytes  = wav_io.getvalue()
-        print("✅ WEBM converted to WAV – size", len(wav_bytes))
+        print("===== DEBUG: /chat_voice called =====")
+        print("Request headers:", request.headers)
+        print("Request form:", request.form)
+        print("Request files:", request.files)
+        raw_file = request.files["audio"]
+        session_id = request.form.get("session_id", str(uuid.uuid4()))
+        language   = request.form.get("language")  or None       # optional
+        # transcript = stt_transcribe(audio_bytes, language)
+        voice_id   = request.form.get("voice_id", ELEVENLABS_VOICE_ID)
 
-        # 3️⃣  Speech-to-text
-        user_input = stt_transcribe(wav_bytes, language)
-        print("🗣️  Transcript:", user_input or "(empty)")
+        try:
+            # 2️⃣  Convert WEBM → WAV (16-bit 48 kHz)
+            webm_bytes = raw_file.read()
+            audio_seg  = AudioSegment.from_file(BytesIO(webm_bytes), format="webm")
+            wav_io     = BytesIO()
+            audio_seg.export(wav_io, format="wav")
+            wav_bytes  = wav_io.getvalue()
+            print("✅ WEBM converted to WAV – size", len(wav_bytes))
 
-        if not user_input.strip():
-            return jsonify({"error": "Could not detect speech"}), 400
+            # 3️⃣  Speech-to-text
+            user_input = stt_transcribe(wav_bytes, language)
+            print("🗣️  Transcript:", user_input or "(empty)")
 
-        # 4️⃣  RAG chat
-        answer = handle_chat(session_id, user_input)
-        print("🤖 Assistant:", answer[:80], "…")
+            if not user_input.strip():
+                return jsonify({"error": "Could not detect speech"}), 400
 
-        # 5️⃣  Text-to-speech
-        tts_bytes = tts_generate(answer, voice_id)
-        audio_b64 = base64.b64encode(tts_bytes).decode()
+            # 4️⃣  RAG chat
+            answer = handle_chat(session_id, user_input)
+            print("🤖 Assistant:", answer[:80], "…")
 
-        # 6️⃣  Return both text + voice
-        return jsonify({
-            "transcript": user_input,
-            "response":   answer,
-            "audio_b64":  audio_b64,
-            "audio_url": f"data:audio/mp3;base64,{audio_b64}",  # ← ADD THIS LINE
-            "session_id": session_id,
-        }), 200
+            # 5️⃣  Text-to-speech
+            tts_bytes = tts_generate(answer, voice_id)
+            audio_b64 = base64.b64encode(tts_bytes).decode()
 
+            # 6️⃣  Return both text + voice
+            return jsonify({
+                "transcript": user_input,
+                "response":   answer,
+                "audio_b64":  audio_b64,
+                "audio_url": f"data:audio/mp3;base64,{audio_b64}",  # ← ADD THIS LINE
+                "session_id": session_id,
+            }), 200
+
+        except Exception as e:
+            # print full traceback for easier debugging
+            import traceback, sys
+            traceback.print_exc(file=sys.stdout)
+            return jsonify({"error": f"Voice pipeline failed: {e}"}), 500
+        
     except Exception as e:
-        # print full traceback for easier debugging
         import traceback, sys
+        print("===== ERROR in /chat_voice =====")
         traceback.print_exc(file=sys.stdout)
         return jsonify({"error": f"Voice pipeline failed: {e}"}), 500
 
