@@ -252,20 +252,23 @@ def get_session_history(session_id: str) -> BaseChatMessageHistory:
 
 
 def tts_generate(text: str, voice_id: str = ELEVENLABS_VOICE_ID) -> bytes:
-    """Generate MP3 bytes from text using ElevenLabs."""
+    """Enhanced TTS with debugging"""
+    print(f"🎵 TTS: Starting generation for {len(text)} characters")
+    
     if not eleven_client:
         raise RuntimeError("ElevenLabs client not configured")
     
     if not text or not text.strip():
         raise ValueError("No text provided for TTS")
     
-    # Limit text length to prevent timeouts
-    if len(text) > 5000:
-        text = text[:5000] + "..."
-        
-    print(f"Generating TTS for text: '{text[:100]}...'")
+    # Limit text length
+    if len(text) > 3000:
+        text = text[:3000] + "..."
+        print(f"🎵 TTS: Text truncated to 3000 characters")
     
     try:
+        print(f"🎵 TTS: Calling ElevenLabs API with voice {voice_id}...")
+        
         stream = eleven_client.text_to_speech.convert(
             voice_id=voice_id,
             text=text,
@@ -279,17 +282,19 @@ def tts_generate(text: str, voice_id: str = ELEVENLABS_VOICE_ID) -> bytes:
             )
         )
         
+        print("🎵 TTS: Collecting audio stream...")
         audio_bytes = b"".join(stream)
         
         if not audio_bytes:
             raise RuntimeError("TTS generated empty audio")
-            
-        print(f"TTS generated: {len(audio_bytes)} bytes")
+        
+        print(f"🎵 TTS: Generated {len(audio_bytes)} bytes")
         return audio_bytes
         
     except Exception as e:
-        print(f"TTS generation failed: {e}")
-        raise RuntimeError(f"Voice generation error: {str(e)}")
+        print(f"🎵 TTS: Error occurred: {str(e)}")
+        raise
+
 # def stt_transcribe(audio_bytes: bytes, language_code: str | None = None) -> str:
 #     """Transcribe user speech with ElevenLabs Scribe v1 (99‑lang auto-detect)."""
 #     if not eleven_client:
@@ -303,17 +308,17 @@ def tts_generate(text: str, voice_id: str = ELEVENLABS_VOICE_ID) -> bytes:
 #     )
 #     return resp.text
 def stt_transcribe(audio_bytes: bytes, language_code: str | None = None) -> str:
-    """Transcribe user speech with ElevenLabs Scribe v1."""
+    """Enhanced STT with debugging"""
+    print(f"🗣️  STT: Starting transcription for {len(audio_bytes)} bytes")
+    
     if not eleven_client:
         raise RuntimeError("ElevenLabs client not configured")
     
     if not audio_bytes:
         raise ValueError("No audio data provided")
-        
-    print(f"Starting STT transcription for {len(audio_bytes)} bytes...")
     
     try:
-        # Add timeout and error handling
+        print("🗣️  STT: Calling ElevenLabs API...")
         audio_io = BytesIO(audio_bytes)
         
         resp = eleven_client.speech_to_text.convert(
@@ -323,17 +328,19 @@ def stt_transcribe(audio_bytes: bytes, language_code: str | None = None) -> str:
             diarize=False,
         )
         
+        print(f"🗣️  STT: API response received")
+        
         if not resp or not hasattr(resp, 'text'):
             raise RuntimeError("Invalid response from STT service")
-            
+        
         transcript = resp.text.strip() if resp.text else ""
-        print(f"STT completed: '{transcript}'")
+        print(f"🗣️  STT: Final transcript: '{transcript}'")
         
         return transcript
         
     except Exception as e:
-        print(f"STT transcription failed: {e}")
-        raise RuntimeError(f"Speech recognition error: {str(e)}")
+        print(f"🗣️  STT: Error occurred: {str(e)}")
+        raise
 # ==== ElevenLabs Integration – helper functions end   ====
 # Atlas Search Index management functions
 def create_atlas_search_index():
@@ -778,110 +785,207 @@ def chat():
 
 @app.route("/chat_voice", methods=["POST"])
 def chat_voice():
+    print("=" * 60)
+    print("🎤 VOICE CHAT DEBUG - Starting request processing")
+    print("=" * 60)
+    
     try:
-        # Validate ElevenLabs configuration
-        if not eleven_client:
-            return jsonify({"error": "Voice service not configured - missing API key"}), 503
-        
+        # Step 1: Check ElevenLabs configuration
+        print("Step 1: Checking ElevenLabs configuration...")
         if not ELEVENLABS_API_KEY:
-            return jsonify({"error": "ELEVENLABS_API_KEY environment variable not set"}), 503
-
-        # Validate upload with better error messages
-        if "audio" not in request.files:
-            return jsonify({"error": "No audio file provided"}), 400
+            error_msg = "ELEVENLABS_API_KEY environment variable not set"
+            print(f"❌ {error_msg}")
+            return jsonify({"error": error_msg}), 503
         
+        if not eleven_client:
+            error_msg = "ElevenLabs client not initialized"
+            print(f"❌ {error_msg}")
+            return jsonify({"error": error_msg}), 503
+        
+        print(f"✅ ElevenLabs API Key: {'*' * (len(ELEVENLABS_API_KEY)-8) + ELEVENLABS_API_KEY[-4:]}")
+        print(f"✅ ElevenLabs client initialized")
+        
+        # Step 2: Check request data
+        print("\nStep 2: Checking request data...")
+        print(f"Request method: {request.method}")
+        print(f"Request headers: {dict(request.headers)}")
+        print(f"Request form keys: {list(request.form.keys())}")
+        print(f"Request files keys: {list(request.files.keys())}")
+        
+        if "audio" not in request.files:
+            error_msg = "No audio file provided in request"
+            print(f"❌ {error_msg}")
+            return jsonify({"error": error_msg}), 400
+            
         raw_file = request.files["audio"]
         if raw_file.filename == '':
-            return jsonify({"error": "Empty audio file"}), 400
-            
-        # Check file size (limit to 10MB)
-        raw_file.seek(0, 2)  # Seek to end
-        file_size = raw_file.tell()
-        raw_file.seek(0)  # Reset to beginning
+            error_msg = "Empty audio filename"
+            print(f"❌ {error_msg}")
+            return jsonify({"error": error_msg}), 400
         
-        if file_size > 10 * 1024 * 1024:  # 10MB limit
-            return jsonify({"error": "Audio file too large (max 10MB)"}), 400
+        print(f"✅ Audio file received: {raw_file.filename}")
         
-        if file_size == 0:
-            return jsonify({"error": "Empty audio file"}), 400
-
+        # Step 3: Get form parameters
+        print("\nStep 3: Getting form parameters...")
         session_id = request.form.get("session_id", str(uuid.uuid4()))
         language = request.form.get("language")
         voice_id = request.form.get("voice_id", ELEVENLABS_VOICE_ID)
-
-        print(f"Processing audio file: {file_size} bytes")
-
-        # Audio conversion with error handling
+        
+        print(f"Session ID: {session_id}")
+        print(f"Language: {language}")
+        print(f"Voice ID: {voice_id}")
+        
+        # Step 4: Read and validate audio file
+        print("\nStep 4: Reading audio file...")
         try:
             webm_bytes = raw_file.read()
-            if not webm_bytes:
-                return jsonify({"error": "Failed to read audio data"}), 400
+            file_size = len(webm_bytes)
+            print(f"✅ Audio file size: {file_size} bytes")
+            
+            if file_size == 0:
+                error_msg = "Audio file is empty"
+                print(f"❌ {error_msg}")
+                return jsonify({"error": error_msg}), 400
                 
+            if file_size > 50 * 1024 * 1024:  # 50MB limit
+                error_msg = f"Audio file too large: {file_size} bytes"
+                print(f"❌ {error_msg}")
+                return jsonify({"error": error_msg}), 400
+                
+        except Exception as read_error:
+            error_msg = f"Failed to read audio file: {str(read_error)}"
+            print(f"❌ {error_msg}")
+            return jsonify({"error": error_msg}), 400
+        
+        # Step 5: Check FFmpeg availability
+        print("\nStep 5: Checking FFmpeg...")
+        try:
+            ffmpeg_output = subprocess.check_output(["ffmpeg", "-version"], stderr=subprocess.STDOUT)
+            print("✅ FFmpeg is available")
+            print(f"FFmpeg version: {ffmpeg_output.decode()[:100]}...")
+        except subprocess.CalledProcessError as e:
+            error_msg = f"FFmpeg error: {str(e)}"
+            print(f"❌ {error_msg}")
+            return jsonify({"error": error_msg}), 500
+        except FileNotFoundError:
+            error_msg = "FFmpeg not found - please install FFmpeg"
+            print(f"❌ {error_msg}")
+            return jsonify({"error": error_msg}), 500
+        
+        # Step 6: Convert audio format
+        print("\nStep 6: Converting audio format...")
+        try:
+            print("Creating AudioSegment from WEBM data...")
             audio_seg = AudioSegment.from_file(BytesIO(webm_bytes), format="webm")
+            print(f"✅ Original audio: {len(audio_seg)}ms, {audio_seg.frame_rate}Hz, {audio_seg.channels} channels")
             
-            # Convert to standard format for better compatibility
+            # Convert to standard format
+            print("Converting to standard format...")
             audio_seg = audio_seg.set_frame_rate(16000).set_channels(1)
+            print(f"✅ Converted audio: {len(audio_seg)}ms, {audio_seg.frame_rate}Hz, {audio_seg.channels} channels")
             
+            # Export to WAV
+            print("Exporting to WAV...")
             wav_io = BytesIO()
             audio_seg.export(wav_io, format="wav")
             wav_bytes = wav_io.getvalue()
+            print(f"✅ WAV export complete: {len(wav_bytes)} bytes")
             
-            print(f"Audio converted: {len(wav_bytes)} bytes")
-            
-        except Exception as audio_error:
-            print(f"Audio conversion error: {audio_error}")
-            return jsonify({"error": f"Audio format conversion failed: {str(audio_error)}"}), 400
-
-        # Speech-to-text with timeout and retry
+        except Exception as conversion_error:
+            error_msg = f"Audio conversion failed: {str(conversion_error)}"
+            print(f"❌ {error_msg}")
+            import traceback
+            print("Conversion error traceback:")
+            traceback.print_exc()
+            return jsonify({"error": error_msg}), 500
+        
+        # Step 7: Speech-to-text
+        print("\nStep 7: Speech-to-text processing...")
         try:
+            print("Calling ElevenLabs STT...")
             user_input = stt_transcribe(wav_bytes, language)
-            print(f"Transcript: '{user_input}'")
+            print(f"✅ STT completed: '{user_input}'")
             
             if not user_input or not user_input.strip():
-                return jsonify({"error": "Could not detect speech in audio"}), 400
+                error_msg = "No speech detected in audio"
+                print(f"❌ {error_msg}")
+                return jsonify({"error": error_msg}), 400
                 
         except Exception as stt_error:
-            print(f"STT error: {stt_error}")
-            return jsonify({"error": f"Speech recognition failed: {str(stt_error)}"}), 500
-
-        # RAG chat processing
+            error_msg = f"Speech-to-text failed: {str(stt_error)}"
+            print(f"❌ {error_msg}")
+            import traceback
+            print("STT error traceback:")
+            traceback.print_exc()
+            return jsonify({"error": error_msg}), 500
+        
+        # Step 8: Chat processing
+        print("\nStep 8: Processing chat...")
         try:
+            print(f"Calling handle_chat with: '{user_input[:50]}...'")
             answer = handle_chat(session_id, user_input)
+            print(f"✅ Chat response: '{answer[:100]}...'")
+            
             if not answer:
-                answer = "I apologize, but I couldn't generate a response. Please try again."
+                answer = "I apologize, but I couldn't generate a response."
                 
         except Exception as chat_error:
-            print(f"Chat error: {chat_error}")
-            return jsonify({"error": f"Chat processing failed: {str(chat_error)}"}), 500
-
-        # Text-to-speech with error handling
+            error_msg = f"Chat processing failed: {str(chat_error)}"
+            print(f"❌ {error_msg}")
+            import traceback
+            print("Chat error traceback:")
+            traceback.print_exc()
+            return jsonify({"error": error_msg}), 500
+        
+        # Step 9: Text-to-speech
+        print("\nStep 9: Text-to-speech processing...")
         try:
+            print(f"Generating TTS for: '{answer[:50]}...'")
             tts_bytes = tts_generate(answer, voice_id)
+            print(f"✅ TTS generated: {len(tts_bytes)} bytes")
+            
             if not tts_bytes:
-                return jsonify({"error": "Failed to generate voice response"}), 500
+                error_msg = "TTS generated empty audio"
+                print(f"❌ {error_msg}")
+                return jsonify({"error": error_msg}), 500
                 
+            # Encode to base64
             audio_b64 = base64.b64encode(tts_bytes).decode()
+            print(f"✅ Base64 encoding complete: {len(audio_b64)} characters")
             
         except Exception as tts_error:
-            print(f"TTS error: {tts_error}")
-            return jsonify({"error": f"Voice generation failed: {str(tts_error)}"}), 500
-
-        return jsonify({
+            error_msg = f"Text-to-speech failed: {str(tts_error)}"
+            print(f"❌ {error_msg}")
+            import traceback
+            print("TTS error traceback:")
+            traceback.print_exc()
+            return jsonify({"error": error_msg}), 500
+        
+        # Step 10: Return response
+        print("\nStep 10: Preparing response...")
+        response_data = {
             "transcript": user_input,
             "response": answer,
             "audio_b64": audio_b64,
             "audio_url": f"data:audio/mp3;base64,{audio_b64}",
             "session_id": session_id,
-        }), 200
-
+        }
+        
+        print("✅ Voice chat processing completed successfully!")
+        print("=" * 60)
+        
+        return jsonify(response_data), 200
+        
     except Exception as e:
+        error_msg = f"Unexpected error in voice chat: {str(e)}"
+        print(f"❌ CRITICAL ERROR: {error_msg}")
+        
         import traceback
-        print("=" * 50)
-        print("VOICE CHAT ERROR:")
-        print(traceback.format_exc())
-        print("=" * 50)
-        return jsonify({"error": f"Voice service error: {str(e)}"}), 500
-    
+        print("Full error traceback:")
+        traceback.print_exc()
+        print("=" * 60)
+        
+        return jsonify({"error": error_msg}), 500  
     
 
 @app.route('/leads', methods=['GET'])
@@ -928,6 +1032,49 @@ def upload_documents():
             
     except Exception as e:
         return jsonify({'error': f'Upload failed: {str(e)}'}), 500
+    
+# Add this diagnostic route
+@app.route('/voice_test', methods=['GET'])
+def voice_test():
+    """Test voice functionality step by step"""
+    results = {}
+    
+    # Test 1: Environment variables
+    results['env_vars'] = {
+        'ELEVENLABS_API_KEY': bool(ELEVENLABS_API_KEY),
+        'ELEVENLABS_VOICE_ID': ELEVENLABS_VOICE_ID
+    }
+    
+    # Test 2: ElevenLabs client
+    results['client'] = bool(eleven_client)
+    
+    # Test 3: FFmpeg
+    try:
+        subprocess.check_output(["ffmpeg", "-version"], stderr=subprocess.STDOUT)
+        results['ffmpeg'] = True
+    except:
+        results['ffmpeg'] = False
+    
+    # Test 4: ElevenLabs API connectivity
+    if eleven_client:
+        try:
+            voices = eleven_client.voices.get_all()
+            results['api_connection'] = True
+            results['available_voices'] = len(voices.voices) if voices else 0
+        except Exception as e:
+            results['api_connection'] = False
+            results['api_error'] = str(e)
+    else:
+        results['api_connection'] = False
+    
+    # Test 5: MongoDB connection
+    try:
+        client.admin.command('ping')
+        results['mongodb'] = True
+    except:
+        results['mongodb'] = False
+    
+    return jsonify(results)
 
 @app.route('/health', methods=['GET'])
 def health_check():
