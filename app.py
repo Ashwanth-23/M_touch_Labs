@@ -229,38 +229,111 @@ def get_session_history(session_id: str) -> BaseChatMessageHistory:
     return chat_store[session_id]
 
 # ==== ElevenLabs Integration – helper functions start ====
+# def tts_generate(text: str, voice_id: str = ELEVENLABS_VOICE_ID) -> bytes:
+#     """Generate MP3 bytes from text using ElevenLabs."""
+#     if not eleven_client:
+#         raise RuntimeError("ElevenLabs client not configured")
+#     try:
+#         stream = eleven_client.text_to_speech.convert(
+#             voice_id=voice_id,
+#             text=text,
+#             model_id="eleven_turbo_v2_5",
+#             output_format="mp3_22050_32",
+#             voice_settings=VoiceSettings()
+#         )
+#         audio_bytes = b"".join(stream)
+#         print("🎤 TTS generated length:", len(audio_bytes))
+#         return audio_bytes
+#     except Exception as e:
+#         import traceback
+#         print("🎤 TTS failed:", e)
+#         traceback.print_exc()
+#         raise
+
+
 def tts_generate(text: str, voice_id: str = ELEVENLABS_VOICE_ID) -> bytes:
     """Generate MP3 bytes from text using ElevenLabs."""
     if not eleven_client:
         raise RuntimeError("ElevenLabs client not configured")
+    
+    if not text or not text.strip():
+        raise ValueError("No text provided for TTS")
+    
+    # Limit text length to prevent timeouts
+    if len(text) > 5000:
+        text = text[:5000] + "..."
+        
+    print(f"Generating TTS for text: '{text[:100]}...'")
+    
     try:
         stream = eleven_client.text_to_speech.convert(
             voice_id=voice_id,
             text=text,
             model_id="eleven_turbo_v2_5",
             output_format="mp3_22050_32",
-            voice_settings=VoiceSettings()
+            voice_settings=VoiceSettings(
+                stability=0.75,
+                similarity_boost=0.8,
+                style=0.0,
+                use_speaker_boost=True
+            )
         )
+        
         audio_bytes = b"".join(stream)
-        print("🎤 TTS generated length:", len(audio_bytes))
+        
+        if not audio_bytes:
+            raise RuntimeError("TTS generated empty audio")
+            
+        print(f"TTS generated: {len(audio_bytes)} bytes")
         return audio_bytes
+        
     except Exception as e:
-        import traceback
-        print("🎤 TTS failed:", e)
-        traceback.print_exc()
-        raise
+        print(f"TTS generation failed: {e}")
+        raise RuntimeError(f"Voice generation error: {str(e)}")
+# def stt_transcribe(audio_bytes: bytes, language_code: str | None = None) -> str:
+#     """Transcribe user speech with ElevenLabs Scribe v1 (99‑lang auto-detect)."""
+#     if not eleven_client:
+#         raise RuntimeError("ElevenLabs client not configured")
+#     print("✅ Starting STT transcription...")
+#     resp = eleven_client.speech_to_text.convert(
+#         file=BytesIO(audio_bytes),
+#         model_id="scribe_v1",
+#         language_code=language_code,
+#         diarize=False,       
+#     )
+#     return resp.text
 def stt_transcribe(audio_bytes: bytes, language_code: str | None = None) -> str:
-    """Transcribe user speech with ElevenLabs Scribe v1 (99‑lang auto-detect)."""
+    """Transcribe user speech with ElevenLabs Scribe v1."""
     if not eleven_client:
         raise RuntimeError("ElevenLabs client not configured")
-    print("✅ Starting STT transcription...")
-    resp = eleven_client.speech_to_text.convert(
-        file=BytesIO(audio_bytes),
-        model_id="scribe_v1",
-        language_code=language_code,
-        diarize=False,       
-    )
-    return resp.text
+    
+    if not audio_bytes:
+        raise ValueError("No audio data provided")
+        
+    print(f"Starting STT transcription for {len(audio_bytes)} bytes...")
+    
+    try:
+        # Add timeout and error handling
+        audio_io = BytesIO(audio_bytes)
+        
+        resp = eleven_client.speech_to_text.convert(
+            file=audio_io,
+            model_id="scribe_v1",
+            language_code=language_code,
+            diarize=False,
+        )
+        
+        if not resp or not hasattr(resp, 'text'):
+            raise RuntimeError("Invalid response from STT service")
+            
+        transcript = resp.text.strip() if resp.text else ""
+        print(f"STT completed: '{transcript}'")
+        
+        return transcript
+        
+    except Exception as e:
+        print(f"STT transcription failed: {e}")
+        raise RuntimeError(f"Speech recognition error: {str(e)}")
 # ==== ElevenLabs Integration – helper functions end   ====
 # Atlas Search Index management functions
 def create_atlas_search_index():
@@ -645,63 +718,169 @@ def chat():
 
 # # ==== ElevenLabs Integration – route start ====
 
+# @app.route("/chat_voice", methods=["POST"])
+# def chat_voice():
+#     if not eleven_client:
+#         return jsonify({"error": "Voice service not configured"}), 503
+
+#     # 1️⃣  Validate upload
+#     if "audio" not in request.files:
+#         return jsonify({"error": "No audio file provided"}), 400
+#     # ✅ DEBUG LOGS GO HERE
+#     try:
+#         print("===== DEBUG: /chat_voice called =====")
+#         print("Request headers:", request.headers)
+#         print("Request form:", request.form)
+#         print("Request files:", request.files)
+#         raw_file = request.files["audio"]
+#         session_id = request.form.get("session_id", str(uuid.uuid4()))
+#         language   = request.form.get("language")  or None       # optional
+#         # transcript = stt_transcribe(audio_bytes, language)
+#         voice_id   = request.form.get("voice_id", ELEVENLABS_VOICE_ID)
+
+#         # 2️⃣  Convert WEBM → WAV (16-bit 48 kHz)
+#         webm_bytes = raw_file.read()
+#         audio_seg  = AudioSegment.from_file(BytesIO(webm_bytes), format="webm")
+#         wav_io     = BytesIO()
+#         audio_seg.export(wav_io, format="wav")
+#         wav_bytes  = wav_io.getvalue()
+#         print("✅ WEBM converted to WAV – size", len(wav_bytes))
+
+#         # 3️⃣  Speech-to-text
+#         user_input = stt_transcribe(wav_bytes, language)
+#         print("🗣️  Transcript:", user_input or "(empty)")
+
+#         if not user_input.strip():
+#             return jsonify({"error": "Could not detect speech"}), 400
+
+#         # 4️⃣  RAG chat
+#         answer = handle_chat(session_id, user_input)
+#         print("🤖 Assistant:", answer[:80], "…")
+
+#         # 5️⃣  Text-to-speech
+#         tts_bytes = tts_generate(answer, voice_id)
+#         audio_b64 = base64.b64encode(tts_bytes).decode()
+
+#         # 6️⃣  Return both text + voice
+#         return jsonify({
+#             "transcript": user_input,
+#             "response":   answer,
+#             "audio_b64":  audio_b64,
+#             "audio_url": f"data:audio/mp3;base64,{audio_b64}",  # ← ADD THIS LINE
+#             "session_id": session_id,
+#         }), 200
+
+#     except Exception as e:
+#         # print full traceback for easier debugging
+#         import traceback, sys
+#         traceback.print_exc(file=sys.stdout)
+#         return jsonify({"error": f"Voice pipeline failed: {e}"}), 500
+
 @app.route("/chat_voice", methods=["POST"])
 def chat_voice():
-    if not eleven_client:
-        return jsonify({"error": "Voice service not configured"}), 503
-
-    # 1️⃣  Validate upload
-    if "audio" not in request.files:
-        return jsonify({"error": "No audio file provided"}), 400
-    # ✅ DEBUG LOGS GO HERE
     try:
-        print("===== DEBUG: /chat_voice called =====")
-        print("Request headers:", request.headers)
-        print("Request form:", request.form)
-        print("Request files:", request.files)
+        # Validate ElevenLabs configuration
+        if not eleven_client:
+            return jsonify({"error": "Voice service not configured - missing API key"}), 503
+        
+        if not ELEVENLABS_API_KEY:
+            return jsonify({"error": "ELEVENLABS_API_KEY environment variable not set"}), 503
+
+        # Validate upload with better error messages
+        if "audio" not in request.files:
+            return jsonify({"error": "No audio file provided"}), 400
+        
         raw_file = request.files["audio"]
+        if raw_file.filename == '':
+            return jsonify({"error": "Empty audio file"}), 400
+            
+        # Check file size (limit to 10MB)
+        raw_file.seek(0, 2)  # Seek to end
+        file_size = raw_file.tell()
+        raw_file.seek(0)  # Reset to beginning
+        
+        if file_size > 10 * 1024 * 1024:  # 10MB limit
+            return jsonify({"error": "Audio file too large (max 10MB)"}), 400
+        
+        if file_size == 0:
+            return jsonify({"error": "Empty audio file"}), 400
+
         session_id = request.form.get("session_id", str(uuid.uuid4()))
-        language   = request.form.get("language")  or None       # optional
-        # transcript = stt_transcribe(audio_bytes, language)
-        voice_id   = request.form.get("voice_id", ELEVENLABS_VOICE_ID)
+        language = request.form.get("language")
+        voice_id = request.form.get("voice_id", ELEVENLABS_VOICE_ID)
 
-        # 2️⃣  Convert WEBM → WAV (16-bit 48 kHz)
-        webm_bytes = raw_file.read()
-        audio_seg  = AudioSegment.from_file(BytesIO(webm_bytes), format="webm")
-        wav_io     = BytesIO()
-        audio_seg.export(wav_io, format="wav")
-        wav_bytes  = wav_io.getvalue()
-        print("✅ WEBM converted to WAV – size", len(wav_bytes))
+        print(f"Processing audio file: {file_size} bytes")
 
-        # 3️⃣  Speech-to-text
-        user_input = stt_transcribe(wav_bytes, language)
-        print("🗣️  Transcript:", user_input or "(empty)")
+        # Audio conversion with error handling
+        try:
+            webm_bytes = raw_file.read()
+            if not webm_bytes:
+                return jsonify({"error": "Failed to read audio data"}), 400
+                
+            audio_seg = AudioSegment.from_file(BytesIO(webm_bytes), format="webm")
+            
+            # Convert to standard format for better compatibility
+            audio_seg = audio_seg.set_frame_rate(16000).set_channels(1)
+            
+            wav_io = BytesIO()
+            audio_seg.export(wav_io, format="wav")
+            wav_bytes = wav_io.getvalue()
+            
+            print(f"Audio converted: {len(wav_bytes)} bytes")
+            
+        except Exception as audio_error:
+            print(f"Audio conversion error: {audio_error}")
+            return jsonify({"error": f"Audio format conversion failed: {str(audio_error)}"}), 400
 
-        if not user_input.strip():
-            return jsonify({"error": "Could not detect speech"}), 400
+        # Speech-to-text with timeout and retry
+        try:
+            user_input = stt_transcribe(wav_bytes, language)
+            print(f"Transcript: '{user_input}'")
+            
+            if not user_input or not user_input.strip():
+                return jsonify({"error": "Could not detect speech in audio"}), 400
+                
+        except Exception as stt_error:
+            print(f"STT error: {stt_error}")
+            return jsonify({"error": f"Speech recognition failed: {str(stt_error)}"}), 500
 
-        # 4️⃣  RAG chat
-        answer = handle_chat(session_id, user_input)
-        print("🤖 Assistant:", answer[:80], "…")
+        # RAG chat processing
+        try:
+            answer = handle_chat(session_id, user_input)
+            if not answer:
+                answer = "I apologize, but I couldn't generate a response. Please try again."
+                
+        except Exception as chat_error:
+            print(f"Chat error: {chat_error}")
+            return jsonify({"error": f"Chat processing failed: {str(chat_error)}"}), 500
 
-        # 5️⃣  Text-to-speech
-        tts_bytes = tts_generate(answer, voice_id)
-        audio_b64 = base64.b64encode(tts_bytes).decode()
+        # Text-to-speech with error handling
+        try:
+            tts_bytes = tts_generate(answer, voice_id)
+            if not tts_bytes:
+                return jsonify({"error": "Failed to generate voice response"}), 500
+                
+            audio_b64 = base64.b64encode(tts_bytes).decode()
+            
+        except Exception as tts_error:
+            print(f"TTS error: {tts_error}")
+            return jsonify({"error": f"Voice generation failed: {str(tts_error)}"}), 500
 
-        # 6️⃣  Return both text + voice
         return jsonify({
             "transcript": user_input,
-            "response":   answer,
-            "audio_b64":  audio_b64,
-            "audio_url": f"data:audio/mp3;base64,{audio_b64}",  # ← ADD THIS LINE
+            "response": answer,
+            "audio_b64": audio_b64,
+            "audio_url": f"data:audio/mp3;base64,{audio_b64}",
             "session_id": session_id,
         }), 200
 
     except Exception as e:
-        # print full traceback for easier debugging
-        import traceback, sys
-        traceback.print_exc(file=sys.stdout)
-        return jsonify({"error": f"Voice pipeline failed: {e}"}), 500
+        import traceback
+        print("=" * 50)
+        print("VOICE CHAT ERROR:")
+        print(traceback.format_exc())
+        print("=" * 50)
+        return jsonify({"error": f"Voice service error: {str(e)}"}), 500
     
     
 
